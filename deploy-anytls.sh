@@ -46,9 +46,9 @@ dry() {
 
 echo "[1/5] Installing sing-box..."
 if ! $DRY_RUN && ! command -v sing-box &>/dev/null; then
-  bash <(curl -fsSL https://sing-box.app/deb.sh)
+  bash <(curl -fsSL https://sing-box.app/install.sh)
 elif $DRY_RUN; then
-  echo "  [dry-run] would install via https://sing-box.app/deb.sh"
+  echo "  [dry-run] would install via https://sing-box.app/install.sh"
 else
   echo "  already installed"
 fi
