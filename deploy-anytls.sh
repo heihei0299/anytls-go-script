@@ -34,6 +34,26 @@ if ! [[ $PORT =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
   echo "Invalid port: $PORT" >&2; exit 1
 fi
 
+echo "[1/6] Checking dependencies..."
+DEPS=(openssl curl)
+MISSING=()
+for cmd in "${DEPS[@]}"; do
+  if ! command -v "$cmd" &>/dev/null; then
+    MISSING+=("$cmd")
+  fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  if $DRY_RUN; then
+    echo "  [dry-run] would install: ${MISSING[*]}"
+  else
+    echo "  installing: ${MISSING[*]}"
+    apt-get install -y "${MISSING[@]}"
+  fi
+else
+  echo "  all ok"
+fi
+
 PASSWORD=$(openssl rand -base64 16)
 
 dry() {
@@ -44,7 +64,7 @@ dry() {
   fi
 }
 
-echo "[1/5] Installing sing-box..."
+echo "[2/6] Installing sing-box..."
 if command -v sing-box &>/dev/null; then
   echo "  already installed"
 elif $DRY_RUN; then
@@ -68,7 +88,7 @@ APT
   apt-get install -y sing-box
 fi
 
-echo "[2/5] Generating self-signed TLS cert..."
+echo "[3/6] Generating self-signed TLS cert..."
 CERT_DIR=/etc/sing-box
 if $DRY_RUN; then
   echo "  [dry-run] mkdir -p $CERT_DIR"
@@ -81,7 +101,7 @@ else
     -subj "/CN=anytls-server"
 fi
 
-echo "[3/5] Writing sing-box config..."
+echo "[4/6] Writing sing-box config..."
 if $DRY_RUN; then
   echo "  [dry-run] would write to $CERT_DIR/config.json:"
 else
@@ -108,12 +128,12 @@ else
 }
 JSON
 
-  echo "[4/5] Starting sing-box service..."
+  echo "[5/6] Starting sing-box service..."
   systemctl enable sing-box
   systemctl restart sing-box
 fi
 
-echo "[5/5] Detecting server IP..."
+echo "[6/6] Detecting server IP..."
 if $DRY_RUN; then
   SERVER_IP="x.x.x.x"
 else
