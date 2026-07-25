@@ -45,12 +45,27 @@ dry() {
 }
 
 echo "[1/5] Installing sing-box..."
-if ! $DRY_RUN && ! command -v sing-box &>/dev/null; then
-  bash <(curl -fsSL https://sing-box.app/install.sh)
-elif $DRY_RUN; then
-  echo "  [dry-run] would install via https://sing-box.app/install.sh"
-else
+if command -v sing-box &>/dev/null; then
   echo "  already installed"
+elif $DRY_RUN; then
+  echo "  [dry-run] would configure apt repo and install sing-box:"
+  echo "  [dry-run]   curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc"
+  echo "  [dry-run]   write /etc/apt/sources.list.d/sagernet.sources"
+  echo "  [dry-run]   apt-get update && apt-get install -y sing-box"
+else
+  mkdir -p /etc/apt/keyrings
+  curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
+  chmod a+r /etc/apt/keyrings/sagernet.asc
+  cat > /etc/apt/sources.list.d/sagernet.sources <<APT
+Types: deb
+URIs: https://deb.sagernet.org/
+Suites: *
+Components: *
+Enabled: yes
+Signed-By: /etc/apt/keyrings/sagernet.asc
+APT
+  apt-get update
+  apt-get install -y sing-box
 fi
 
 echo "[2/5] Generating self-signed TLS cert..."
