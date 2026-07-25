@@ -5,7 +5,7 @@
 ## 一键部署
 
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/shial/anytls-go-script/main/deploy-anytls.sh | bash
+sudo curl -fsSL https://raw.githubusercontent.com/heihei0299/anytls-go-script/refs/heads/main/deploy-anytls.sh | bash
 ```
 
 部署成功后，当前目录会生成 `mihomo-anytls.yaml`，直接复制到 mihomo 的 `proxies` 段即可。
