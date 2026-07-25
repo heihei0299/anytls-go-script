@@ -135,31 +135,51 @@ fi
 
 echo "[6/6] Detecting server IP..."
 if $DRY_RUN; then
-  SERVER_IP="x.x.x.x"
+  IPV4="x.x.x.x"
+  IPV6="::1"
 else
-  SERVER_IP=$(curl -fs4 ifconfig.me 2>/dev/null || curl -fs6 ifconfig.me 2>/dev/null || echo "unknown")
+  IPV4=$(curl -fs4 ifconfig.me 2>/dev/null || echo "")
+  IPV6=$(curl -fs6 ifconfig.me 2>/dev/null || echo "")
 fi
 
 if $DRY_RUN; then
   echo ""
   echo "  Password:    $PASSWORD"
   echo "  Port:        $PORT"
-  echo "  Server IP:   $SERVER_IP (placeholder)"
+  echo "  IPv4:        $IPV4 (placeholder)"
+  echo "  IPv6:        $IPV6 (placeholder)"
   echo ""
-  echo "  Mihomo config would be saved to: $(pwd)/mihomo-anytls.yaml"
+  echo "  Mihomo config saved to: $(pwd)/mihomo-anytls.yaml"
   echo ""
 fi
 
-cat > mihomo-anytls.yaml <<YAML
-proxies:
-  - name: anytls
-    type: anytls
-    server: $SERVER_IP
-    port: $PORT
-    password: "$PASSWORD"
-    client-fingerprint: chrome
-    udp: false
-    skip-cert-verify: true
-YAML
+{
+  echo "proxies:"
+  if [[ -n "$IPV4" ]]; then
+    echo "  - name: anytls"
+    echo "    type: anytls"
+    echo "    server: $IPV4"
+    echo "    port: $PORT"
+    echo "    password: \"$PASSWORD\""
+    echo "    client-fingerprint: chrome"
+    echo "    udp: false"
+    echo "    skip-cert-verify: true"
+  fi
+  if [[ -n "$IPV6" ]]; then
+    echo "  - name: anytls-ipv6"
+    echo "    type: anytls"
+    echo "    server: $IPV6"
+    echo "    port: $PORT"
+    echo "    password: \"$PASSWORD\""
+    echo "    client-fingerprint: chrome"
+    echo "    udp: false"
+    echo "    skip-cert-verify: true"
+  fi
+} > mihomo-anytls.yaml
+
+if [[ -z "$IPV4" && -z "$IPV6" ]]; then
+  echo "Error: failed to detect any public IP" >&2
+  exit 1
+fi
 
 cat mihomo-anytls.yaml
