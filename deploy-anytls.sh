@@ -35,7 +35,7 @@ if ! [[ $PORT =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
 fi
 
 echo "[1/6] Checking dependencies..."
-DEPS=(openssl curl)
+DEPS=(openssl curl jq)
 MISSING=()
 for cmd in "${DEPS[@]}"; do
   if ! command -v "$cmd" &>/dev/null; then
@@ -102,31 +102,46 @@ else
 fi
 
 echo "[4/6] Writing sing-box config..."
-if $DRY_RUN; then
-  echo "  [dry-run] would write to $CERT_DIR/config.json:"
-else
-  cat > /etc/sing-box/config.json <<JSON
+INBODY=$(cat <<JSON
 {
-  "log": { "level": "info" },
-  "inbounds": [
-    {
-      "type": "anytls",
-      "tag": "anytls-in",
-      "listen": "::",
-      "listen_port": $PORT,
-      "users": [
-        { "name": "user1", "password": "$PASSWORD" }
-      ],
-      "padding_scheme": $PADDING_SCHEME,
-      "tls": {
-        "enabled": true,
-        "certificate_path": "$CERT_DIR/cert.pem",
-        "key_path": "$CERT_DIR/key.pem"
-      }
-    }
-  ]
+  "type": "anytls",
+  "tag": "anytls-in",
+  "listen": "::",
+  "listen_port": $PORT,
+  "users": [
+    { "name": "user1", "password": "$PASSWORD" }
+  ],
+  "padding_scheme": $PADDING_SCHEME,
+  "tls": {
+    "enabled": true,
+    "certificate_path": "$CERT_DIR/cert.pem",
+    "key_path": "$CERT_DIR/key.pem"
+  }
 }
 JSON
+)
+
+if $DRY_RUN; then
+  if [[ -f /etc/sing-box/config.json ]]; then
+    echo "  [dry-run] would merge anytls inbound into existing config"
+  else
+    echo "  [dry-run] would write new config to $CERT_DIR/config.json:"
+    echo "$INBODY"
+  fi
+else
+  if [[ -f /etc/sing-box/config.json ]]; then
+    jq --argjson inbound "$INBODY" \
+      '.inbounds = ([.inbounds[] | select(.tag != "anytls-in")]) + [$inbound]' \
+      /etc/sing-box/config.json > /etc/sing-box/config.json.tmp
+    mv /etc/sing-box/config.json.tmp /etc/sing-box/config.json
+  else
+    cat > /etc/sing-box/config.json <<JSON
+{
+  "log": { "level": "info" },
+  "inbounds": [$INBODY]
+}
+JSON
+  fi
 
   echo "[5/6] Starting sing-box service..."
   systemctl enable sing-box
