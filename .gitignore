@@ -117,10 +117,16 @@ coverage/
 
 # === 项目本地 ===
 .scratch/
+mihomo.yaml
 mihomo-anytls.yaml
 .project-init.lock
 .trellis
-
+.agents
+.claude
+.opencode
+.docs
+opencode.json
+skills-lock.json
 # === 其他通用 ===
 *.log
 *.tmp
