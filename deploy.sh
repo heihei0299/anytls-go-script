@@ -455,53 +455,41 @@ yaml_quote() {
 }
 
 OUTPUT_FILE="mihomo.yaml"
+render_proxy() {
+  local server="$1"
+  local anytls_name="$2"
+  local hy2_name="$3"
+
+  if $ENABLE_ANYTLS; then
+    echo "  - name: $anytls_name"
+    echo "    type: anytls"
+    echo "    server: $server"
+    echo "    port: $PORT"
+    echo "    password: $(yaml_quote "$PASSWORD")"
+    echo "    client-fingerprint: chrome"
+    echo "    udp: false"
+    echo "    skip-cert-verify: true"
+  fi
+  if $ENABLE_HY2; then
+    echo "  - name: $hy2_name"
+    echo "    type: hysteria2"
+    echo "    server: $server"
+    echo "    port: $HY2_PORT"
+    echo "    password: $(yaml_quote "$HY2_PASSWORD")"
+    echo "    sni: $server"
+    echo "    skip-cert-verify: true"
+    echo "    alpn:"
+    echo "      - h3"
+  fi
+}
+
 render_mihomo_config() {
   echo "proxies:"
   if [[ -n "$IPV4" ]]; then
-    if $ENABLE_ANYTLS; then
-      echo "  - name: $ANYTLS_NAME"
-      echo "    type: anytls"
-      echo "    server: $IPV4"
-      echo "    port: $PORT"
-      echo "    password: $(yaml_quote "$PASSWORD")"
-      echo "    client-fingerprint: chrome"
-      echo "    udp: false"
-      echo "    skip-cert-verify: true"
-    fi
-    if $ENABLE_HY2; then
-      echo "  - name: $HY2_NAME"
-      echo "    type: hysteria2"
-      echo "    server: $IPV4"
-      echo "    port: $HY2_PORT"
-      echo "    password: $(yaml_quote "$HY2_PASSWORD")"
-      echo "    sni: $IPV4"
-      echo "    skip-cert-verify: true"
-      echo "    alpn:"
-      echo "      - h3"
-    fi
+    render_proxy "$IPV4" "$ANYTLS_NAME" "$HY2_NAME"
   fi
   if [[ -n "$IPV6" ]]; then
-    if $ENABLE_ANYTLS; then
-      echo "  - name: $ANYTLS_IPV6_NAME"
-      echo "    type: anytls"
-      echo "    server: $IPV6"
-      echo "    port: $PORT"
-      echo "    password: $(yaml_quote "$PASSWORD")"
-      echo "    client-fingerprint: chrome"
-      echo "    udp: false"
-      echo "    skip-cert-verify: true"
-    fi
-    if $ENABLE_HY2; then
-      echo "  - name: $HY2_IPV6_NAME"
-      echo "    type: hysteria2"
-      echo "    server: $IPV6"
-      echo "    port: $HY2_PORT"
-      echo "    password: $(yaml_quote "$HY2_PASSWORD")"
-      echo "    sni: $IPV6"
-      echo "    skip-cert-verify: true"
-      echo "    alpn:"
-      echo "      - h3"
-    fi
+    render_proxy "$IPV6" "$ANYTLS_IPV6_NAME" "$HY2_IPV6_NAME"
   fi
 }
 if $DRY_RUN; then

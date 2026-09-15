@@ -33,12 +33,12 @@ flowchart TD
         INSTALL["sing-box 安装<br/>L188-L210"]
         CERT["TLS 证书复用/生成<br/>L212-L240"]
         INBOUND["anytls / hysteria2 inbound 构建<br/>L242-L353"]
-        MERGE["配置组装与按 tag 合并<br/>L354-L415"]
-        SERVICE["systemd 服务启停<br/>L408-L412"]
+        MERGE["配置组装与按 tag 合并<br/>L354-L412"]
+        SERVICE["systemd 服务启停<br/>L409-L413"]
         IP["公网 IPv4 / IPv6 探测<br/>L419-L431"]
-        RENDER["mihomo YAML 渲染<br/>L453-L512"]
-        COMPAT["兼容文件复制<br/>L514-L516"]
-        OUTPUT["终端输出<br/>L518-L521"]
+        RENDER["mihomo YAML 渲染<br/>L453-L500"]
+        COMPAT["兼容文件复制<br/>L502-L504"]
+        OUTPUT["终端输出<br/>L506-L509"]
 
         PARSE --> VALIDATE
         VALIDATE --> NAME
@@ -152,8 +152,8 @@ systemctl 重启 sing-box
 | 依赖检查与密码生成 | `deploy.sh:152-185` |
 | sing-box 安装 | `deploy.sh:188-210` |
 | TLS 证书复用/生成 | `deploy.sh:212-240` |
-| inbound 构建与配置合并 | `deploy.sh:242-415` |
-| 服务启动与公网 IP 探测 | `deploy.sh:408-431` |
-| Mihomo 配置输出 | `deploy.sh:453-521` |
+| inbound 构建与配置合并 | `deploy.sh:242-412` |
+| 服务启动与公网 IP 探测 | `deploy.sh:409-431` |
+| Mihomo 配置输出 | `deploy.sh:453-509` |
 
 > 本文基于当前 Git 跟踪的项目文件扫描生成；部署逻辑以 `deploy.sh` 当前实现为准。
