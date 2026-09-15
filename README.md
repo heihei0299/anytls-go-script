@@ -22,6 +22,7 @@ sudo curl -fsSL https://raw.githubusercontent.com/heihei0299/sing-box-deploy/ref
 | `--name` | 节点基础名称（覆盖 hostname） | `hostname` 短名 |
 | `--password` | 自定义 anytls 密码 | 随机生成 |
 | `--hy2-password` | 自定义 hy2 密码 | 独立随机生成 |
+| `--renew-cert` | 强制重新生成自签名 TLS 证书 | 复用已有证书 |
 | `--no-hy2` / `--anytls-only` | 仅部署 anytls | — |
 | `--no-anytls` / `--hy2-only` | 仅部署 hy2 | — |
 | `--dry-run` / `--dry` | 预览不执行 | — |
@@ -35,6 +36,8 @@ sudo curl -fsSL https://raw.githubusercontent.com/heihei0299/sing-box-deploy/ref
 - hy2 IPv6: `<hostname>-hy2-ipv6`
 
 双协议默认同端口复用：anytls 监听 TCP、hy2 监听 UDP，共享同一端口号；如需分离请显式指定 `--hy2-port`。
+
+重复部署时默认复用已有 `/etc/sing-box/key.pem` 和 `cert.pem`；如需轮换证书请显式指定 `--renew-cert`。
 
 ### 示例
 
@@ -52,8 +55,11 @@ sudo ./deploy.sh --port 443 --hy2-port 8443
 sudo ./deploy.sh --anytls-only
 sudo ./deploy.sh --hy2-only
 
-# 预览
+# 预览（不会写入 mihomo 配置文件）
 sudo ./deploy.sh --dry
+
+# 强制轮换 TLS 证书
+sudo ./deploy.sh --renew-cert
 
 # 兼容旧入口（已废弃）
 sudo ./deploy-anytls.sh --port 8443
@@ -88,12 +94,13 @@ proxies:
 ## 原理
 
 1. 添加 sing-box 官方 apt 仓库并安装
-2. 生成 ECDSA P-256 自签名证书（anytls 与 hy2 复用）
+2. 复用或生成 ECDSA P-256 自签名证书（anytls 与 hy2 复用）
 3. 写入 `/etc/sing-box/config.json`（`anytls-in` / `hy2-in` 双 inbound，幂等合并）
 4. `systemctl enable --now sing-box`
-5. 自动检测公网 IP，输出 mihomo 客户端配置
+5. 自动检测公网 IP；IPv4/IPv6 均不可用时使用 `unknown` 并输出警告，再生成 mihomo 客户端配置
 
 ## 系统要求
 
 - Ubuntu / Debian
 - 需 root 权限
+- 防火墙和云安全组需放行配置的端口（anytls/TCP、hysteria2/UDP）

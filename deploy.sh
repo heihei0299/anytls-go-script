@@ -10,25 +10,41 @@ ENABLE_HY2=true
 CUSTOM_NAME=""
 CUSTOM_PASSWORD=""
 CUSTOM_HY2_PASSWORD=""
+RENEW_CERT=false
+
+require_value() {
+  if [[ $# -lt 2 ]]; then
+    echo "Missing value for $1" >&2
+    exit 1
+  fi
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port|--anytls-port)
+      require_value "$@"
       PORT="$2"; shift 2 ;;
     --hy2-port)
+      require_value "$@"
       HY2_PORT="$2"; shift 2 ;;
     --padding-scheme)
+      require_value "$@"
       PADDING_SCHEME="$2"; shift 2 ;;
     --name)
+      require_value "$@"
       CUSTOM_NAME="$2"; shift 2 ;;
     --password)
+      require_value "$@"
       CUSTOM_PASSWORD="$2"; shift 2 ;;
     --hy2-password)
+      require_value "$@"
       CUSTOM_HY2_PASSWORD="$2"; shift 2 ;;
     --no-hy2|--without-hy2|--anytls-only)
       ENABLE_HY2=false; shift ;;
     --no-anytls|--without-anytls|--hy2-only)
       ENABLE_ANYTLS=false; shift ;;
+    --renew-cert)
+      RENEW_CERT=true; shift ;;
     --dry-run|--dry)
       DRY_RUN=true; shift ;;
     --help|-h)
@@ -46,6 +62,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --no-anytls           disable anytls (hy2 only)"
       echo "  --anytls-only         alias for --no-hy2"
       echo "  --hy2-only            alias for --no-anytls"
+      echo "  --renew-cert          regenerate the self-signed TLS certificate"
       echo "  --dry-run, --dry      preview without executing"
       echo "  --help, -h            show this help"
       exit 0 ;;
@@ -146,6 +163,7 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
     echo "  [dry-run] would install: ${MISSING[*]}"
   else
     echo "  installing: ${MISSING[*]}"
+    apt-get update
     apt-get install -y "${MISSING[@]}"
   fi
 else
@@ -154,34 +172,30 @@ fi
 
 if [[ -n "$CUSTOM_PASSWORD" ]]; then
   PASSWORD="$CUSTOM_PASSWORD"
+elif $DRY_RUN; then
+  PASSWORD="<generated-at-runtime>"
 else
   PASSWORD=$(openssl rand -base64 16)
 fi
 if [[ -n "$CUSTOM_HY2_PASSWORD" ]]; then
   HY2_PASSWORD="$CUSTOM_HY2_PASSWORD"
+elif $DRY_RUN; then
+  HY2_PASSWORD="<generated-at-runtime>"
 else
   HY2_PASSWORD=$(openssl rand -base64 16)
 fi
-
-dry() {
-  if $DRY_RUN; then
-    echo "[dry-run] $*"
-  else
-    "$@"
-  fi
-}
 
 echo "[2/6] Installing sing-box..."
 if command -v sing-box &>/dev/null; then
   echo "  already installed"
 elif $DRY_RUN; then
   echo "  [dry-run] would configure apt repo and install sing-box:"
-  echo "  [dry-run]   curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc"
+  echo "  [dry-run]   curl -fsSL --connect-timeout 10 --max-time 60 https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc"
   echo "  [dry-run]   write /etc/apt/sources.list.d/sagernet.sources"
   echo "  [dry-run]   apt-get update && apt-get install -y sing-box"
 else
   mkdir -p /etc/apt/keyrings
-  curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
+  curl -fsSL --connect-timeout 10 --max-time 60 https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
   chmod a+r /etc/apt/keyrings/sagernet.asc
   cat > /etc/apt/sources.list.d/sagernet.sources <<APT
 Types: deb
@@ -195,17 +209,34 @@ APT
   apt-get install -y sing-box
 fi
 
-echo "[3/6] Generating self-signed TLS cert..."
+echo "[3/6] Checking TLS cert..."
 CERT_DIR=/etc/sing-box
-if $DRY_RUN; then
+CONFIG_FILE="$CERT_DIR/config.json"
+if [[ -f "$CERT_DIR/key.pem" && -f "$CERT_DIR/cert.pem" && "$RENEW_CERT" == false ]]; then
+  echo "  existing TLS certificate found; reusing"
+elif $DRY_RUN; then
+  echo "  [dry-run] would generate TLS certificate in $CERT_DIR"
   echo "  [dry-run] mkdir -p $CERT_DIR"
   echo "  [dry-run] openssl ecparam -genkey -name prime256v1 -out $CERT_DIR/key.pem"
   echo "  [dry-run] openssl req -x509 -days 36500 -key $CERT_DIR/key.pem -out $CERT_DIR/cert.pem -subj /CN=anytls-server"
 else
   mkdir -p "$CERT_DIR"
-  openssl ecparam -genkey -name prime256v1 -out "$CERT_DIR/key.pem"
-  openssl req -x509 -days 36500 -key "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
-    -subj "/CN=anytls-server"
+  (
+    umask 077
+    openssl ecparam -genkey -name prime256v1 -out "$CERT_DIR/key.pem"
+    openssl req -x509 -days 36500 -key "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
+      -subj "/CN=anytls-server"
+  )
+fi
+if ! $DRY_RUN; then
+  SERVICE_GROUP=$(id -gn sing-box 2>/dev/null || true)
+  if [[ -n "$SERVICE_GROUP" ]]; then
+    chgrp "$SERVICE_GROUP" "$CERT_DIR/key.pem"
+    chmod 640 "$CERT_DIR/key.pem"
+  else
+    chmod 600 "$CERT_DIR/key.pem"
+  fi
+  chmod 644 "$CERT_DIR/cert.pem"
 fi
 
 echo "[4/6] Writing sing-box config..."
@@ -213,45 +244,111 @@ echo "[4/6] Writing sing-box config..."
 ANYTLS_INBOUND=""
 HY2_INBOUND=""
 
-if $ENABLE_ANYTLS; then
-ANYTLS_INBOUND=$(cat <<JSON
+json_quote() {
+  if command -v jq &>/dev/null; then
+    jq -rn --arg value "$1" '$value | @json'
+    return
+  fi
+
+  local value="$1"
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  value=${value//$'\t'/\\t}
+  value=${value//$'\b'/\\b}
+  value=${value//$'\f'/\\f}
+  printf '"%s"' "$value"
+}
+
+if command -v jq &>/dev/null; then
+  if $ENABLE_ANYTLS; then
+    if ! ANYTLS_INBOUND=$(jq -n \
+      --arg password "$PASSWORD" \
+      --arg cert "$CERT_DIR/cert.pem" \
+      --arg key "$CERT_DIR/key.pem" \
+      --argjson port "$PORT" \
+      --argjson padding "$PADDING_SCHEME" \
+      '{
+        "type": "anytls",
+        "tag": "anytls-in",
+        "listen": "::",
+        "listen_port": $port,
+        "users": [{ "name": "user1", "password": $password }],
+        "padding_scheme": $padding,
+        "tls": {
+          "enabled": true,
+          "certificate_path": $cert,
+          "key_path": $key
+        }
+      }'); then
+      echo "Error: --padding-scheme must be valid JSON" >&2
+      exit 1
+    fi
+  fi
+
+  if $ENABLE_HY2; then
+    HY2_INBOUND=$(jq -n \
+      --arg password "$HY2_PASSWORD" \
+      --arg cert "$CERT_DIR/cert.pem" \
+      --arg key "$CERT_DIR/key.pem" \
+      --argjson port "$HY2_PORT" \
+      '{
+        "type": "hysteria2",
+        "tag": "hy2-in",
+        "listen": "::",
+        "listen_port": $port,
+        "users": [{ "name": "user1", "password": $password }],
+        "tls": {
+          "enabled": true,
+          "certificate_path": $cert,
+          "key_path": $key
+        }
+      }')
+  fi
+elif $DRY_RUN; then
+  if $ENABLE_ANYTLS; then
+    ANYTLS_INBOUND=$(cat <<JSON
 {
   "type": "anytls",
   "tag": "anytls-in",
   "listen": "::",
   "listen_port": $PORT,
   "users": [
-    { "name": "user1", "password": "$PASSWORD" }
+    { "name": "user1", "password": $(json_quote "$PASSWORD") }
   ],
   "padding_scheme": $PADDING_SCHEME,
   "tls": {
     "enabled": true,
-    "certificate_path": "$CERT_DIR/cert.pem",
-    "key_path": "$CERT_DIR/key.pem"
+    "certificate_path": $(json_quote "$CERT_DIR/cert.pem"),
+    "key_path": $(json_quote "$CERT_DIR/key.pem")
   }
 }
 JSON
 )
-fi
-
-if $ENABLE_HY2; then
-HY2_INBOUND=$(cat <<JSON
+  fi
+  if $ENABLE_HY2; then
+    HY2_INBOUND=$(cat <<JSON
 {
   "type": "hysteria2",
   "tag": "hy2-in",
   "listen": "::",
   "listen_port": $HY2_PORT,
   "users": [
-    { "name": "user1", "password": "$HY2_PASSWORD" }
+    { "name": "user1", "password": $(json_quote "$HY2_PASSWORD") }
   ],
   "tls": {
     "enabled": true,
-    "certificate_path": "$CERT_DIR/cert.pem",
-    "key_path": "$CERT_DIR/key.pem"
+    "certificate_path": $(json_quote "$CERT_DIR/cert.pem"),
+    "key_path": $(json_quote "$CERT_DIR/key.pem")
   }
 }
 JSON
 )
+  fi
+else
+  echo "Error: jq is required but not installed" >&2
+  exit 1
 fi
 
 # Build inbounds array for jq (with fallback for dry-run without jq)
@@ -280,7 +377,7 @@ else
 fi
 
 if $DRY_RUN; then
-  if [[ -f /etc/sing-box/config.json ]]; then
+  if [[ -f "$CONFIG_FILE" ]]; then
     echo "  [dry-run] would merge inbounds into existing config (tags: anytls-in, hy2-in)"
     echo "  [dry-run] inbounds to be ensured:"
     if command -v jq &>/dev/null; then
@@ -297,14 +394,15 @@ if $DRY_RUN; then
     fi
   fi
 else
-  if [[ -f /etc/sing-box/config.json ]]; then
+  if [[ -f "$CONFIG_FILE" ]]; then
     jq --argjson inbounds "$INBOUNDS_JSON" \
-      '.inbounds = ([.inbounds[] | select(.tag != "anytls-in" and .tag != "hy2-in")]) + $inbounds' \
-      /etc/sing-box/config.json > /etc/sing-box/config.json.tmp
-    mv /etc/sing-box/config.json.tmp /etc/sing-box/config.json
+      '.inbounds = [(.inbounds // [])[] | select(.tag != "anytls-in" and .tag != "hy2-in")] + $inbounds' \
+      "$CONFIG_FILE" > "$CONFIG_FILE.tmp"
+    cp -p "$CONFIG_FILE" "$CONFIG_FILE.bak"
+    mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
   else
     jq -n --argjson inbounds "$INBOUNDS_JSON" \
-      '{ "log": { "level": "info" }, "inbounds": $inbounds }' > /etc/sing-box/config.json
+      '{ "log": { "level": "info" }, "inbounds": $inbounds }' > "$CONFIG_FILE"
   fi
 
   echo "[5/6] Starting sing-box service..."
@@ -323,8 +421,13 @@ if $DRY_RUN; then
   IPV4="x.x.x.x"
   IPV6="::1"
 else
-  IPV4=$(curl -fs4 ifconfig.me 2>/dev/null || echo "")
-  IPV6=$(curl -fs6 ifconfig.me 2>/dev/null || echo "")
+  IPV4=$(curl -fs4 --connect-timeout 5 --max-time 10 ifconfig.me 2>/dev/null || echo "")
+  IPV6=$(curl -fs6 --connect-timeout 5 --max-time 10 ifconfig.me 2>/dev/null || echo "")
+fi
+
+if [[ -z "$IPV4" && -z "$IPV6" ]]; then
+  IPV4="unknown"
+  echo "Warning: failed to detect any public IP; using unknown" >&2
 fi
 
 if $DRY_RUN; then
@@ -343,12 +446,16 @@ if $DRY_RUN; then
   echo "  IPv4:        $IPV4 (placeholder)"
   echo "  IPv6:        $IPV6 (placeholder)"
   echo ""
-  echo "  Mihomo config saved to: $(pwd)/mihomo.yaml (compat: mihomo-anytls.yaml)"
+  echo "  [dry-run] would save Mihomo config to: $(pwd)/mihomo.yaml (compat: mihomo-anytls.yaml)"
   echo ""
 fi
 
-OUTPUT="mihomo.yaml"
-{
+yaml_quote() {
+  json_quote "$1"
+}
+
+OUTPUT_FILE="mihomo.yaml"
+render_mihomo_config() {
   echo "proxies:"
   if [[ -n "$IPV4" ]]; then
     if $ENABLE_ANYTLS; then
@@ -356,7 +463,7 @@ OUTPUT="mihomo.yaml"
       echo "    type: anytls"
       echo "    server: $IPV4"
       echo "    port: $PORT"
-      echo "    password: \"$PASSWORD\""
+      echo "    password: $(yaml_quote "$PASSWORD")"
       echo "    client-fingerprint: chrome"
       echo "    udp: false"
       echo "    skip-cert-verify: true"
@@ -366,7 +473,7 @@ OUTPUT="mihomo.yaml"
       echo "    type: hysteria2"
       echo "    server: $IPV4"
       echo "    port: $HY2_PORT"
-      echo "    password: \"$HY2_PASSWORD\""
+      echo "    password: $(yaml_quote "$HY2_PASSWORD")"
       echo "    sni: $IPV4"
       echo "    skip-cert-verify: true"
       echo "    alpn:"
@@ -379,7 +486,7 @@ OUTPUT="mihomo.yaml"
       echo "    type: anytls"
       echo "    server: $IPV6"
       echo "    port: $PORT"
-      echo "    password: \"$PASSWORD\""
+      echo "    password: $(yaml_quote "$PASSWORD")"
       echo "    client-fingerprint: chrome"
       echo "    udp: false"
       echo "    skip-cert-verify: true"
@@ -389,23 +496,26 @@ OUTPUT="mihomo.yaml"
       echo "    type: hysteria2"
       echo "    server: $IPV6"
       echo "    port: $HY2_PORT"
-      echo "    password: \"$HY2_PASSWORD\""
+      echo "    password: $(yaml_quote "$HY2_PASSWORD")"
       echo "    sni: $IPV6"
       echo "    skip-cert-verify: true"
       echo "    alpn:"
       echo "      - h3"
     fi
   fi
-} > "$OUTPUT"
+}
+if $DRY_RUN; then
+  echo "  [dry-run] Mihomo config preview:"
+  render_mihomo_config
+else
+  render_mihomo_config > "$OUTPUT_FILE"
+fi
 
 # compat symlink/copy for old path
-if [[ "$OUTPUT" != "mihomo-anytls.yaml" ]]; then
-  cp -f "$OUTPUT" mihomo-anytls.yaml 2>/dev/null || true
+if ! $DRY_RUN && [[ "$OUTPUT_FILE" != "mihomo-anytls.yaml" ]]; then
+  cp -f "$OUTPUT_FILE" mihomo-anytls.yaml 2>/dev/null || true
 fi
 
-if [[ -z "$IPV4" && -z "$IPV6" ]]; then
-  echo "Error: failed to detect any public IP" >&2
-  exit 1
+if ! $DRY_RUN; then
+  cat "$OUTPUT_FILE"
 fi
-
-cat "$OUTPUT"
