@@ -24,14 +24,16 @@ SPECIAL_OUTPUT=$(cd "$WORK_DIR" && bash "$ROOT_DIR/deploy.sh" \
   --password 'a"b\c' \
   --hy2-password 'h"y\z')
 
-EXPECTED_PASSWORD=$(jq -rn --arg value 'a"b\c' '$value | @json')
+EXPECTED_PASSWORD='"a\"b\\c"'
 printf '%s\n' "$SPECIAL_OUTPUT" | rg -qF "\"password\": $EXPECTED_PASSWORD"
 printf '%s\n' "$SPECIAL_OUTPUT" | rg -qF "password: $EXPECTED_PASSWORD"
 
-if (cd "$WORK_DIR" && bash "$ROOT_DIR/deploy.sh" --dry-run --padding-scheme not-json) >"$WORK_DIR/invalid-padding.out" 2>&1; then
-  exit 1
+if command -v jq &>/dev/null; then
+  if (cd "$WORK_DIR" && bash "$ROOT_DIR/deploy.sh" --dry-run --padding-scheme not-json) >"$WORK_DIR/invalid-padding.out" 2>&1; then
+    exit 1
+  fi
+  rg -qF -- '--padding-scheme must be valid JSON' "$WORK_DIR/invalid-padding.out"
 fi
-rg -qF -- '--padding-scheme must be valid JSON' "$WORK_DIR/invalid-padding.out"
 
 for command_name in openssl curl cat tr awk sed xargs; do
   ln -s "$(command -v "$command_name")" "$NO_JQ_BIN/$command_name"
@@ -42,7 +44,7 @@ NO_JQ_OUTPUT=$(cd "$WORK_DIR" && PATH="$NO_JQ_BIN" /bin/bash "$ROOT_DIR/deploy.s
   --hy2-port 9443 \
   --password 'a"b\c' \
   --hy2-password hy2-password)
-EXPECTED_NO_JQ_PASSWORD=$(jq -rn --arg value 'a"b\c' '$value | @json')
+EXPECTED_NO_JQ_PASSWORD="$EXPECTED_PASSWORD"
 printf '%s\n' "$NO_JQ_OUTPUT" | rg -qF '"listen_port": 8443'
 printf '%s\n' "$NO_JQ_OUTPUT" | rg -qF "password: $EXPECTED_NO_JQ_PASSWORD"
 
