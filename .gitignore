@@ -139,3 +139,9 @@ tmp/
 temp/
 uploads/
 media/
+
+# === 提交内容治理：仅提交 README + 源码 ===
+# 其余文档保留在本地磁盘，不纳入版本控制
+*.md
+!README*.md
+/docs/
